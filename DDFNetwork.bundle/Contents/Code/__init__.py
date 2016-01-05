@@ -53,14 +53,17 @@ class EXCAgent(Agent.Movies):
         if media.primary_metadata is not None:
             year = media.primary_metadata.year
 
-        searchResults = PerformSearch(title)
-
-        for searchResult in searchResults[0].xpath('//p[contains(@class,"set_title")]//a'):
-            resultTitle = searchResult.text_content()
-            curID = searchResult.get('href').replace('/','_')
-            score = 100 - Util.LevenshteinDistance(title.lower(), resultTitle.lower())
-            results.Append(MetadataSearchResult(id = curID, name = resultTitle, score = score, lang = lang))
-            results.Sort('score', descending=True)            
+        if 'http://' not in title: 
+            searchResults = PerformSearch(title)
+            for searchResult in searchResults[0].xpath('//p[contains(@class,"set_title")]//a'):
+                resultTitle = searchResult.text_content()
+                curID = searchResult.get('href').replace('/','_')
+                score = 100 - Util.LevenshteinDistance(title.lower(), resultTitle.lower())
+                results.Append(MetadataSearchResult(id = curID, name = resultTitle, score = score, lang = lang))
+        else:
+            curID = title.replace('/','_')
+            results.Append(MetadataSearchResult(id = curID, name = 'user defined', score = 100, lang = lang))
+        results.Sort('score', descending=True)            
 
     def update(self, metadata, media, lang):
 
