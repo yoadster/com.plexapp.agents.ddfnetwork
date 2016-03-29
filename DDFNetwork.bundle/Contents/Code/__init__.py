@@ -20,12 +20,25 @@ def any(s):
             return True
     return False
 
+def DoSearch(keyword):
+    searchResults = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(keyword))
+    return searchResults.xpath('//div[contains(@class,"scene")]')
+
 def PerformSearch(keyword):
+    keyword = keyword.lower()
+    hasWildcard = "_" in keyword
+    
     if "http://" in keyword:
         searchResults = HTML.ElementFromURL(keyword)
     else:
-        searchResults = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(keyword))
-    return searchResults.xpath('//div[contains(@class,"scene")]')
+        keyword = keyword.replace("strap on","strap-on")
+        if(hasWildcard):
+            results = DoSearch(keyword.replace("_",": "))
+            if len(results) == 1:
+                return DoSearch(keyword.replace("_"," - "))
+            return results
+        else:
+            return DoSearch(keyword)
 
 def Start():
     HTTP.CacheTime = CACHE_1DAY
@@ -41,11 +54,19 @@ class EXCAgent(Agent.Movies):
     primary_provider = True
 
     def search(self, results, media, lang):
-        
-        title = media.name
-        if media.primary_metadata is not None:
-            title = media.primary_metadata.title
+        Log(Prefs['override'])
+        if Prefs['override'] == False:
+            path=urllib.unquote(media.filename).decode('utf8')
+            Log(path)
+            nameSegments = path.split("\\")
+            length = len(nameSegments)
+            title = nameSegments[length -1].split(".")[0]
+        else:
+            title = media.name
+            if media.primary_metadata is not None:
+                title = media.primary_metadata.title
 
+        
         Log('*******MEDIA TITLE****** ' + str(title))
 
         # Search for year

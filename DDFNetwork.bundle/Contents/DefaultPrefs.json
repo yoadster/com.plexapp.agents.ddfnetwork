@@ -16,5 +16,11 @@
         "label": "A semicolon delimited array of tag maps",
         "type": "text",
         "default": ""
+    },
+	{
+        "id": "override",
+        "label": "Override the seach with a url",
+        "type": "bool",
+        "default": false
     }
 ]
