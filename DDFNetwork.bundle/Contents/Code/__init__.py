@@ -11,8 +11,22 @@ from cStringIO import StringIO
 VERSION_NO = '1.2013.06.02.1'
 DATEFORMAT = '%B %d, %Y'
 XPATHS = {
-        'MetadataDate': '//*[@id="sets_details"]/div[3]/div[1]/div[1]/div'
-    }
+        'MetadataDate': '//*[@id="sets_details"]/div[3]/div[1]/div[1]/div',
+        'SceneTitleAnchor': '//p[contains(@class,"set_title")]//a'
+}
+LOGMESSAGES = {
+    'SearchNormal': '***SEARCH*** Normal search being used',
+    'SearchUserDefined': '***SEARCH*** User defined search being used',
+    'SearchWildcard': '***SEARCH*** Wildcard search being used',
+    'TitleFilename': '***SEARCH*** Using filename as title',
+    'TitlePrimaryMetadata': '***SEARCH*** Using primary metadata as title',
+    'TitleMediaName': '***SEARCH*** Using media name as title'
+}
+CONSTS = {
+    'SearchUrl': 'http://ddfnetwork.com/tour-search-scene.php?freeword=',
+    'UserDefinedString': 'http://',
+    'WildcardString': '_'
+}
 
 def any(s):
     for v in s:
@@ -20,70 +34,20 @@ def any(s):
             return True
     return False
 
-def DoSearch(keyword):
-    searchResults = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(keyword))
-    return searchResults.xpath('//div[contains(@class,"scene")]')
-
-def PerformSearch(keyword):
-    keyword = keyword.lower()
-    hasWildcard = "_" in keyword
-    
-    if "http://" in keyword:
-        searchResults = HTML.ElementFromURL(keyword)
-    else:
-        keyword = keyword.replace("strap on","strap-on")
-        if(hasWildcard):
-            results = DoSearch(keyword.replace("_",": "))
-            if len(results) == 1:
-                return DoSearch(keyword.replace("_"," - "))
-            return results
-        else:
-            return DoSearch(keyword)
-
 def Start():
     HTTP.CacheTime = CACHE_1DAY
 
-def SetDateMetadata(date):
-    date_object = datetime.strptime(date, DATEFORMAT)
-    return date_object
-
 class EXCAgent(Agent.Movies):
+    
     name = 'DDF Network'
     languages = [Locale.Language.English]
     accepts_from = ['com.plexapp.agents.localmedia']
     primary_provider = True
 
     def search(self, results, media, lang):
-        Log(Prefs['override'])
-        if Prefs['override'] == False:
-            path=urllib.unquote(media.filename).decode('utf8')
-            Log(path)
-            nameSegments = path.split("\\")
-            length = len(nameSegments)
-            title = nameSegments[length -1].split(".")[0]
-        else:
-            title = media.name
-            if media.primary_metadata is not None:
-                title = media.primary_metadata.title
 
-        
-        Log('*******MEDIA TITLE****** ' + str(title))
-
-        # Search for year
-        year = media.year
-        if media.primary_metadata is not None:
-            year = media.primary_metadata.year
-
-        if 'http://' not in title: 
-            searchResults = PerformSearch(title)
-            for searchResult in searchResults[0].xpath('//p[contains(@class,"set_title")]//a'):
-                resultTitle = searchResult.text_content()
-                curID = searchResult.get('href').replace('/','_')
-                score = 100 - Util.LevenshteinDistance(title.lower(), resultTitle.lower())
-                results.Append(MetadataSearchResult(id = curID, name = resultTitle, score = score, lang = lang))
-        else:
-            curID = title.replace('/','_')
-            results.Append(MetadataSearchResult(id = curID, name = 'user defined', score = 100, lang = lang))
+        for scene in SearchResultsCollection(self.GetTitleFromMedia(media)).Results:      
+            results.Append(MetadataSearchResult(id = scene.id, name = scene.title, score = scene.score, lang = lang))
         results.Sort('score', descending=True)            
 
     def update(self, metadata, media, lang):
@@ -96,7 +60,7 @@ class EXCAgent(Agent.Movies):
         metadata.title = detailsPageElements.xpath('//h1')[0].text_content()
         metadata.summary = detailsPageElements.xpath('//div[@id="sets_story"]')[0].text_content().replace('&13;', '').strip(' \t\n\r"') + "\n\n"
         metadata.tagline = detailsPageElements.xpath('/html/head/title')[0].text_content()
-        metadata.originally_available_at = SetDateMetadata(detailsPageElements.xpath(XPATHS['MetadataDate'])[0].text_content())
+        metadata.originally_available_at = self.SetDateMetadata(detailsPageElements.xpath(XPATHS['MetadataDate'])[0].text_content())
         metadata.year = metadata.originally_available_at.year
 
         # Genres
@@ -143,13 +107,83 @@ class EXCAgent(Agent.Movies):
             actor = member.text_content().strip()
             if " aka " in actor:
                 actor = actor.split(" aka ")[0]
-            role.actor = actor
+            role.title = actor
             metadata.collections.add(member.text_content().strip())
 
         #Background
-        backgroundUrl = detailsPageElements.xpath('//video[@id="html5_trailer_player"]')[0].get('data-preview')
-        metadata.art[backgroundUrl] = Proxy.Preview(HTTP.Request(backgroundUrl, headers={'Referer': 'http://www.google.com'}).content, sort_order = 0)
-        coverPage = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(metadata.title).replace('%5Cu2019','%E2%80%99'))
-        cover = coverPage.xpath('//a[contains(@href,"' + url + '")]//img')[0].get('src')
+        #backgroundUrl = detailsPageElements.xpath('//video[@id="html5_trailer_player"]')[0].get('data-preview')
+        #metadata.art[backgroundUrl] = Proxy.Preview(HTTP.Request(backgroundUrl, headers={'Referer': 'http://www.google.com'}).content, sort_order = 0)
+        #coverPage = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(metadata.title).replace('%5Cu2019','%E2%80%99'))
+        #cover = coverPage.xpath('//a[contains(@href,"' + url + '")]//img')[0].get('src')
 
-        metadata.posters[cover] = Proxy.Preview(HTTP.Request(cover).content, sort_order = 0)
+        #metadata.posters[cover] = Proxy.Preview(HTTP.Request(cover).content, sort_order = 0)
+
+    def GetTitleFromMedia(self, media):     
+        title = media.name
+        if CONSTS['UserDefinedString'] not in title or CONSTS['WildcardString'] not in title:
+            if media.filename is not None:
+                Log(LOGMESSAGES['TitleFilename'])
+                filePath = urllib.unquote(media.filename).decode('utf8')
+                filePathSegments = filePath.split("\\")
+                title = filePathSegments[len(filePathSegments) -1].split(".")[0]
+            else:
+                if media.primary_metadata is not None:
+                    Log(LOGMESSAGES['TitlePrimaryMetadata'])
+                    title = media.primary_metadata.title
+        else:
+            Log(LOGMESSAGES['TitleMediaName'])
+        return title
+
+    def SetDateMetadata(self, date):
+            return datetime.strptime(date, DATEFORMAT)
+
+#A class defining a search result
+class SearchResult:
+    
+    def __init__(self, searchResultElement, keyword):
+        if CONSTS['UserDefinedString'] in searchResultElement:
+            self.title = searchResultElement
+            self.id = searchResultElement.replace("/","_")
+            self.score = 100
+        else:
+            try:
+                titleAnchor = searchResultElement.xpath(XPATHS['SceneTitleAnchor'])[0]
+                self.title = titleAnchor.text_content()
+                self.cover = '' #TODO: Append cover url to url
+                self.score = 100 - Util.LevenshteinDistance(keyword, self.title)
+                self.id = titleAnchor.get('href').replace("/","_")
+            except:
+                pass        
+        
+#A collection of SearchResult classes derived from a keyword search
+class SearchResultsCollection:
+    
+    #Init the collection
+    def __init__(self, keyword):
+        self.Results = []
+        if not (keyword is None):
+            if CONSTS['UserDefinedString'] not in keyword and CONSTS['WildcardString'] not in keyword:
+                Log(LOGMESSAGES['SearchNormal'])
+                results = self.performSearch(keyword)
+            else:
+                if CONSTS['WildcardString'] in keyword:
+                    Log(LOGMESSAGES['SearchWildcard'])
+                    results = self.performSearch(keyword.replace(CONSTS['WildcardString'],": "))
+                    if len(results) == 1:
+                        results = self.performSearch(keyword.replace(CONSTS['WildcardString']," - "))
+                        if len(results) == 1:
+                            return
+                else:
+                    if CONSTS['UserDefinedString'] in keyword:
+                        Log(LOGMESSAGES['SearchUserDefined'])
+                        self.Results.append(SearchResult(keyword,None))
+                        return
+            
+            for searchResultObject in results:
+                self.Results.append(SearchResult(searchResultObject, keyword))
+
+    #Perform a search based on a keyword provided
+    def performSearch(self, keyword):
+        return HTML.ElementFromURL(CONSTS['SearchUrl'] + urllib.quote(keyword)).xpath('//div[contains(@class,"scene")]')
+
+
