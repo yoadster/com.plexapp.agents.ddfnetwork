@@ -153,7 +153,10 @@ class EXCAgent(Agent.Movies):
         return title.lower()
 
     def GetFormattedDate(self, date):
-            return datetime.strptime(date, DATEFORMAT)
+        date = date.replace("Septembre","September")
+        date = date.replace("Septiembre","September")
+        date = date.replace("  ", " ")
+        return datetime.strptime(date, DATEFORMAT)
     
     def PosterAlreadyExists(self,posterUrl,metadata):
         dnsSegment = posterUrl.split('?')[0].lower()
