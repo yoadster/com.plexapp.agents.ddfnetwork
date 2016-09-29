@@ -215,9 +215,22 @@ class SearchResultsCollection:
                         self.Results.append(SearchResult(keyword,None))
                         return
 
+            if len(results) == 1:
+                self.performGoogleSearch(keyword)
+
             for searchResultObject in results:
                 self.Results.append(SearchResult(searchResultObject, keyword))
 
     #Perform a search based on a keyword provided
     def performSearch(self, keyword):
         return HTML.ElementFromURL(CONSTS['SearchUrl'] + urllib.quote(keyword)).xpath('//div[contains(@class,"scene")]')
+
+    def performGoogleSearch(self, keyword):
+        keyword = keyword.replace(" ","+")
+        res = HTML.ElementFromURL('https://www.google.co.uk/search?q=' + keyword + '+site%3Addfnetwork.com&oq=' + keyword + '+site%3Addfnetwork.com&aqs=chrome..69i57.22057j0j8&sourceid=chrome&ie=UTF-8')
+        for s in res.xpath('//h3'):
+            title = s.text_content()
+            if keyword.replace("+"," ").lower() in title.lower():
+                Log(s.text_content())
+                link = s.xpath("./a")[0].get('href')
+                self.Results.append(SearchResult(link,None))
