@@ -11,7 +11,7 @@ from cStringIO import StringIO
 VERSION_NO = '1.2013.06.02.1'
 DATEFORMAT = '%B %d, %Y'
 XPATHS = {
-        'MetadataDate': '//*[@id="sets_details"]/div[3]/div[1]/div[1]/div',
+        'MetadataDate': '//*[@id="wrapper"]/main/div[3]/div/div[1]/h2/time',
         'SceneTitleAnchor': '//p[contains(@class,"set_title")]//a',
 }
 LOGMESSAGES = {
@@ -58,23 +58,42 @@ class EXCAgent(Agent.Movies):
     def update(self, metadata, media, lang):
 
         Log('******UPDATE CALLED*******')
+
         metadata.studio = 'DDF Network'
-        url = str(metadata.id).replace('_','/')
+        url = str(metadata.id).replace('_','/').replace('http://es.','http://').replace('http://fr.','http://')
         try:
             coverpage = url.split("&coverpage=")[1]
         except:
             coverpage = None
 
-        detailsPageElements = HTML.ElementFromURL(url)
+        try:
+            accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
+            headers = { 'Accept' : accept }
+
+            req = urllib.Request(url)
+            req.add_header('Accept', accept)
+            resp = urllib.urlopen(req)
+            detailsPageElements = HTML.ElementFromString(resp.read())
+        except urllib.HTTPError as e:
+            Log(e.code)
+            Log(e.read())
+        
+        #detailsPageElements = HTML.ElementFromURL(url)
+
         metadata.title = detailsPageElements.xpath('//h1')[0].text_content()
-        metadata.summary = detailsPageElements.xpath('//div[@id="sets_story"]')[0].text_content().replace('&13;', '').replace('\n',' ').replace('\r',' ').strip(' \t\n\r"') + "\n\n"
+        metadata.summary = detailsPageElements.xpath('//div[@class="about-text"]//p')[0].text_content().replace('&13;', '').replace('\n',' ').replace('\r',' ').strip(' \t\n\r"') + "\n\n"
         metadata.tagline = detailsPageElements.xpath('/html/head/title')[0].text_content()
-        metadata.originally_available_at = self.GetFormattedDate(detailsPageElements.xpath(XPATHS['MetadataDate'])[0].text_content())
-        metadata.year = metadata.originally_available_at.year
+        try:
+            metadata.originally_available_at = self.GetFormattedDate(detailsPageElements.xpath(XPATHS['MetadataDate'])[0].text_content())
+            metadata.year = metadata.originally_available_at.year
+        except Exception, e:
+            Log(str(e))
+            pass
 
         # Genres
         metadata.genres.clear()
-        genres = detailsPageElements.xpath('//div[contains(@class,"sets_tag_list_elems")]//a')
+        genres = detailsPageElements.xpath('//ul[contains(@class,"tags")]//a')
         genreFilter=[]
         if Prefs["excludegenre"] is not None:
             Log("exclude")
@@ -110,7 +129,9 @@ class EXCAgent(Agent.Movies):
         metadata.collections.clear()
      
         starring = None
-        starring = detailsPageElements.xpath('//h3[contains(@class,"casts")]//a')
+        starring = detailsPageElements.xpath('//*[@id="wrapper"]/main/div[6]/div/div/div[1]//a')
+        if len(starring) == 0:
+            starring = detailsPageElements.xpath('//*[@id="wrapper"]/main/div[4]/div/div[1]/h2//a')
         for member in starring:
             role = metadata.roles.new()
             actor = member.text_content().strip()
@@ -127,14 +148,72 @@ class EXCAgent(Agent.Movies):
         except:
             pass
 
-        coverPage = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(metadata.title).replace('%5Cu2019','%E2%80%99'))
-        cover = coverPage.xpath('//a[contains(@href,"' + url + '")]//img')[0].get('src')  
+        cover = self.GetCoverPage('http://ddfnetwork.com' + starring[0].get('href'),metadata.title.lower())
+        #try:
         if not self.PosterAlreadyExists(cover,metadata):
             metadata.posters[cover] = Proxy.Preview(HTTP.Request(cover).content, sort_order = 0)
-        #coverPage = HTML.ElementFromURL('http://ddfnetwork.com/tour-search-scene.php?freeword=' + urllib.quote(metadata.title).replace('%5Cu2019','%E2%80%99'))
-        #cover = coverPage.xpath('//a[contains(@href,"' + url + '")]//img')[0].get('src')
+        #except:
+        #    pass
 
-        #metadata.posters[cover] = Proxy.Preview(HTTP.Request(cover).content, sort_order = 0)
+    def GetCoverPage(self, url, title):
+        Log(url)
+        Log(title)
+        try:
+            accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
+            headers = { 'Accept' : accept }
+            req = urllib.Request(url)
+            req.add_header('Accept', accept)
+            resp = urllib.urlopen(req)
+            ele = HTML.ElementFromString(resp.read())
+            
+        except urllib.HTTPError as e:
+            Log(e.code)
+            Log(e.read())
+
+        addPages = ele.xpath('//div[contains(@class,"pager-box")]//a')
+        pages = []
+        for page in addPages:
+            href = page.get('href')
+            if href !='':
+                if href not in pages:
+                    pages.append(href)
+
+        scenes = ele.xpath('//div[contains(@class,"cover-wrap")]//img')
+        for scene in scenes:
+            alt = scene.get('alt').lower()
+            Log(alt)
+            if alt !='':
+                if alt in title:
+                    Log(scene.get('src'))
+                    return scene.get('src')
+                    
+        for p in pages:
+            
+            try:
+                accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
+                headers = { 'Accept' : accept }
+                if 'http' in p:
+                    req = urllib.Request(p)
+                else:
+                    req = urllib.Request('http://ddfnetwork.com' + p)
+                req.add_header('Accept', accept)
+                resp = urllib.urlopen(req)
+                ele = HTML.ElementFromString(resp.read())
+            
+            except urllib.HTTPError as e:
+                Log(e.code)
+                Log(e.read())
+
+            scenes = ele.xpath('//div[contains(@class,"cover-wrap")]//img')
+            for scene in scenes:
+                alt = scene.get('alt').lower()
+                Log(alt)
+                if alt !='':
+                    if alt in title:
+                        Log(scene.get('src'))
+                        return scene.get('src')         
 
     def GetTitleFromMedia(self, media):     
         title = media.name
@@ -155,11 +234,21 @@ class EXCAgent(Agent.Movies):
     def GetFormattedDate(self, date):
         date = date.replace("Septembre","September")
         date = date.replace("Septiembre","September")
+        date = date.replace("Mayo","May")
+        date = date.replace("Junio","June")
+        date = date.replace("Juin","June")
+        date = date.replace("Giugno","June")
+        date = date.replace("6.","June")
+        date = date.replace("Januar","January")
+        date = date.replace("Januaryy","January")
         date = date.replace("  ", " ")
         return datetime.strptime(date, DATEFORMAT)
     
     def PosterAlreadyExists(self,posterUrl,metadata):
-        dnsSegment = posterUrl.split('?')[0].lower()
+        if "?" in posterUrl:
+            dnsSegment = posterUrl.split('?')[0].lower()
+        else:
+            dnsSegment = posterUrl.lower()
         for p in metadata.posters.keys():
             key = p.lower()
             if dnsSegment in p:
@@ -200,22 +289,26 @@ class SearchResultsCollection:
             keyword = keyword.replace('strap on','strap-on')
             if CONSTS['UserDefinedString'] not in keyword and CONSTS['WildcardString'] not in keyword:
                 Log(LOGMESSAGES['SearchNormal'])
-                results = self.performSearch(keyword)
+		results = []
+                #results = self.performSearch(keyword)
             else:
                 if CONSTS['WildcardString'] in keyword:
                     Log(LOGMESSAGES['SearchWildcard'])
-                    results = self.performSearch(keyword.replace(CONSTS['WildcardString'],": "))
-                    if len(results) == 1:
-                        results = self.performSearch(keyword.replace(CONSTS['WildcardString']," - "))
-                        if len(results) == 1:
-                            return
+		    results = []
+                    #results = self.performSearch(keyword.replace(CONSTS['WildcardString'],": "))
+                    #if len(results) == 1:
+                    #    results = self.performSearch(keyword.replace(CONSTS['WildcardString']," - "))
+                    #    if len(results) == 1:
+                    return
                 else:
                     if CONSTS['UserDefinedString'] in keyword:
                         Log(LOGMESSAGES['SearchUserDefined'])
                         self.Results.append(SearchResult(keyword,None))
                         return
 
-            if len(results) == 1:
+	    Log(len(results))
+            if len(results) == 0:
+		Log("Performing google search")
                 self.performGoogleSearch(keyword)
 
             for searchResultObject in results:
@@ -226,7 +319,7 @@ class SearchResultsCollection:
         return HTML.ElementFromURL(CONSTS['SearchUrl'] + urllib.quote(keyword)).xpath('//div[contains(@class,"scene")]')
 
     def performGoogleSearch(self, keyword):
-        keyword = keyword.replace(" ","+")
+        keyword = keyword.replace(" ","+").replace("&","%26")
         res = HTML.ElementFromURL('https://www.google.co.uk/search?q=' + keyword + '+site%3Addfnetwork.com&oq=' + keyword + '+site%3Addfnetwork.com&aqs=chrome..69i57.22057j0j8&sourceid=chrome&ie=UTF-8')
         for s in res.xpath('//h3'):
             title = s.text_content()
