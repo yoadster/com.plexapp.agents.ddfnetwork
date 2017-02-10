@@ -18,9 +18,21 @@
         "default": ""
     },
 	{
-        "id": "override",
-        "label": "Override the seach with a url",
+        "id": "useapi",
+        "label": "Use custom search api",
         "type": "bool",
         "default": false
+    },
+    {
+        "id": "key",
+        "label": "API key",
+        "type": "text",
+        "default": ""
+    },
+    {
+        "id": "siteid",
+        "label": "Google Site id",
+        "type": "text",
+        "default": ""
     }
 ]

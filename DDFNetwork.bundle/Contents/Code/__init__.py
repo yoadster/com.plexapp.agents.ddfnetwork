@@ -4,6 +4,7 @@ import urllib
 import urllib2 as urllib
 import urlparse
 import json
+import time
 from datetime import datetime
 from PIL import Image
 from cStringIO import StringIO
@@ -45,7 +46,6 @@ class EXCAgent(Agent.Movies):
     primary_provider = True
 
     def search(self, results, media, lang):
-
         r = SearchResultsCollection(self.GetTitleFromMedia(media)).Results
         for scene in r:
             try:  
@@ -53,14 +53,14 @@ class EXCAgent(Agent.Movies):
             except:
                 pass
             
-        results.Sort('score', descending=True)            
+        results.Sort('score', descending=True)
 
     def update(self, metadata, media, lang):
 
         Log('******UPDATE CALLED*******')
 
         metadata.studio = 'DDF Network'
-        url = str(metadata.id).replace('_','/').replace('http://es.','http://').replace('http://fr.','http://')
+        url = str(metadata.id).replace('_','/').replace('http://es.','http://').replace('http://fr.','http://').replace('http://it.','http://').replace("http://it.it.","http").replace("http://de.","http://")
         try:
             coverpage = url.split("&coverpage=")[1]
         except:
@@ -80,6 +80,9 @@ class EXCAgent(Agent.Movies):
             Log(e.read())
         
         #detailsPageElements = HTML.ElementFromURL(url)
+
+        
+            
 
         metadata.title = detailsPageElements.xpath('//h1')[0].text_content()
         metadata.summary = detailsPageElements.xpath('//div[@class="about-text"]//p')[0].text_content().replace('&13;', '').replace('\n',' ').replace('\r',' ').strip(' \t\n\r"') + "\n\n"
@@ -129,9 +132,10 @@ class EXCAgent(Agent.Movies):
         metadata.collections.clear()
      
         starring = None
-        starring = detailsPageElements.xpath('//*[@id="wrapper"]/main/div[6]/div/div/div[1]//a')
+        starring = detailsPageElements.xpath('//h2[@class="actors"]//a')
         if len(starring) == 0:
             starring = detailsPageElements.xpath('//*[@id="wrapper"]/main/div[4]/div/div[1]/h2//a')
+            
         for member in starring:
             role = metadata.roles.new()
             actor = member.text_content().strip()
@@ -149,71 +153,43 @@ class EXCAgent(Agent.Movies):
             pass
 
         cover = self.GetCoverPage('http://ddfnetwork.com' + starring[0].get('href'),metadata.title.lower())
-        #try:
         if not self.PosterAlreadyExists(cover,metadata):
             metadata.posters[cover] = Proxy.Preview(HTTP.Request(cover).content, sort_order = 0)
-        #except:
-        #    pass
 
     def GetCoverPage(self, url, title):
-        Log(url)
+        
+        Log("Getting cover page")
         Log(title)
-        try:
-            accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
-            headers = { 'Accept' : accept }
-            req = urllib.Request(url)
-            req.add_header('Accept', accept)
-            resp = urllib.urlopen(req)
-            ele = HTML.ElementFromString(resp.read())
-            
-        except urllib.HTTPError as e:
-            Log(e.code)
-            Log(e.read())
+        Log(url)
 
-        addPages = ele.xpath('//div[contains(@class,"pager-box")]//a')
-        pages = []
-        for page in addPages:
-            href = page.get('href')
-            if href !='':
-                if href not in pages:
-                    pages.append(href)
-
-        scenes = ele.xpath('//div[contains(@class,"cover-wrap")]//img')
-        for scene in scenes:
-            alt = scene.get('alt').lower()
-            Log(alt)
-            if alt !='':
-                if alt in title:
-                    Log(scene.get('src'))
-                    return scene.get('src')
-                    
-        for p in pages:
-            
+        page = 1
+        while True:
             try:
                 accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
                 user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36'
                 headers = { 'Accept' : accept }
-                if 'http' in p:
-                    req = urllib.Request(p)
-                else:
-                    req = urllib.Request('http://ddfnetwork.com' + p)
-                req.add_header('Accept', accept)
-                resp = urllib.urlopen(req)
-                ele = HTML.ElementFromString(resp.read())
-            
-            except urllib.HTTPError as e:
-                Log(e.code)
-                Log(e.read())
-
-            scenes = ele.xpath('//div[contains(@class,"cover-wrap")]//img')
-            for scene in scenes:
-                alt = scene.get('alt').lower()
-                Log(alt)
-                if alt !='':
-                    if alt in title:
-                        Log(scene.get('src'))
-                        return scene.get('src')         
+                if 'http' in url:
+                    u = url + "/" + str(page)
+                    Log(u)
+                    req = urllib.Request(url + "/" + str(page))
+                    req.add_header('Accept', accept)
+                    resp = urllib.urlopen(req)
+                    ele = HTML.ElementFromString(resp.read())
+                    test = ele.xpath('//h2')
+                    if len(test) == 0:
+                        scenes = ele.xpath('//div[contains(@class,"cover-wrap")]//img')
+                        for s in scenes:
+                            alt = s.get('alt').lower()
+                            if alt !='':
+                                Log("alt = " + alt)
+                                if (alt in title) or (title in alt):
+                                    return s.get('src')
+                    else:
+                        break
+                page = page + 1
+            except:
+                Log("Got to page: " + str(page))
+                break
 
     def GetTitleFromMedia(self, media):     
         title = media.name
@@ -242,6 +218,22 @@ class EXCAgent(Agent.Movies):
         date = date.replace("Januar","January")
         date = date.replace("Januaryy","January")
         date = date.replace("  ", " ")
+        date = date.replace("2.","February")
+        date = date.replace("11.","November")
+        date = date.replace("Dicembre","December")
+        date = date.replace("1.","January")
+        date = date.replace("3.","March")
+        date = date.replace("4.","April")
+        date = date.replace("5.","May")
+        date = date.replace("7.","July")
+        date = date.replace("8.","August")
+        date = date.replace("9.","September")
+        date = date.replace("10.","October")
+        date = date.replace("1February","February")
+        date = date.replace("M\xc3\xa4rz","March")
+        date = date.replace("Maggio","May")
+        date = date.replace("Noviembre","November")
+        date = date.replace("Octubre","October")
         return datetime.strptime(date, DATEFORMAT)
     
     def PosterAlreadyExists(self,posterUrl,metadata):
@@ -266,6 +258,7 @@ class SearchResult:
 
         if searchResultElement is not None:
             if CONSTS['UserDefinedString'] in searchResultElement:
+                Log("OK")
                 self.title = searchResultElement
                 self.id = searchResultElement.replace("/","_")
                 self.score = 100
@@ -289,17 +282,11 @@ class SearchResultsCollection:
             keyword = keyword.replace('strap on','strap-on')
             if CONSTS['UserDefinedString'] not in keyword and CONSTS['WildcardString'] not in keyword:
                 Log(LOGMESSAGES['SearchNormal'])
-		results = []
-                #results = self.performSearch(keyword)
+                results = []
             else:
                 if CONSTS['WildcardString'] in keyword:
                     Log(LOGMESSAGES['SearchWildcard'])
 		    results = []
-                    #results = self.performSearch(keyword.replace(CONSTS['WildcardString'],": "))
-                    #if len(results) == 1:
-                    #    results = self.performSearch(keyword.replace(CONSTS['WildcardString']," - "))
-                    #    if len(results) == 1:
-                    return
                 else:
                     if CONSTS['UserDefinedString'] in keyword:
                         Log(LOGMESSAGES['SearchUserDefined'])
@@ -311,19 +298,39 @@ class SearchResultsCollection:
 		Log("Performing google search")
                 self.performGoogleSearch(keyword)
 
-            for searchResultObject in results:
-                self.Results.append(SearchResult(searchResultObject, keyword))
+            #for searchResultObject in results:
+                #self.Results.append(SearchResult(searchResultObject, keyword))
 
-    #Perform a search based on a keyword provided
-    def performSearch(self, keyword):
-        return HTML.ElementFromURL(CONSTS['SearchUrl'] + urllib.quote(keyword)).xpath('//div[contains(@class,"scene")]')
+    def processResultUrl(self, url):
+        if "jp.milf." in url:
+            url = url.replace("jp.milf.","")
+        if "jp.m." in url:
+            url = url.replace("jp.m.","")
+        if "jp.tattoo." in url:
+            url = url.replace("jp.tattoo.","")
+        if "join." in url:
+            url = url.replace("join.","")
+        if "beta." in url:
+            url = url.replace("beta.","")
+        if "brazzers." in url:
+            url = url.replace("brazzers.","")
+        if "it.it" in url:
+            url = url.replace("it.it.","")
+        return url.replace("join.","").replace("jp.","")
 
     def performGoogleSearch(self, keyword):
-        keyword = keyword.replace(" ","+").replace("&","%26")
-        res = HTML.ElementFromURL('https://www.google.co.uk/search?q=' + keyword + '+site%3Addfnetwork.com&oq=' + keyword + '+site%3Addfnetwork.com&aqs=chrome..69i57.22057j0j8&sourceid=chrome&ie=UTF-8')
-        for s in res.xpath('//h3'):
-            title = s.text_content()
-            if keyword.replace("+"," ").lower() in title.lower():
-                Log(s.text_content())
-                link = s.xpath("./a")[0].get('href')
-                self.Results.append(SearchResult(link,None))
+        k = keyword.replace(" - ","+").replace("_", "+").replace(": ","+").replace(" ","+").replace("&","and").lower()
+        if Prefs["useapi"] is not False:
+            key = Prefs["key"]
+            siteid = Prefs["siteid"]
+            res = JSON.ObjectFromURL('https://www.googleapis.com/customsearch/v1?q=' + k + '&cx=' + siteid + '&fields=items(link%2Ctitle)&key=' + key)
+            for s in res['items']:
+                url = s["link"].lower()
+                title = s["title"].replace(": "," ").replace(" - "," ").replace("...","").replace("'","").replace("  "," ").lower().strip()
+                markup = keyword.replace(": "," ").replace(" - "," ").replace("_"," ").replace("  "," ").lower().strip()
+
+                Log("SEarch result: " + title + " - keyword: " + markup)
+                
+                if (markup in title) or (title in markup):
+                    self.Results.append(SearchResult(self.processResultUrl(url),None))
+        
